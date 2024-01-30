@@ -1,4 +1,4 @@
-using Plots, Random, LaTeXStrings, Statistics, Distributions, GLM, DataFrames, DelimitedFiles, DataStructures, LsqFit, StatsBase
+using Plots, Random, LaTeXStrings, Statistics, Distributions, GLM, DataFrames, DelimitedFiles, DataStructures, LsqFit, StatsBase, LinearFitXYerrors
 
 
 function calculate_ci(data, confidence_level)
@@ -439,7 +439,6 @@ N_array=[50, 100]
 
 #t_fixed_and_t_lost(N_array, p_A_array, 2000, 1000)
 
-
 function heterozygosis_evolution(N, #population 
     p_A, #frequency for the allele A
     t,   #time of evolution of the population
@@ -493,15 +492,11 @@ function heterozygosis_evolution(N, #population
         push!(mean_heterozygosis_array, mean(heterozygosity_matrix[i,:]))
         push!(std_heterozygosis_array, std(heterozygosity_matrix[i,:]))
     end
-
+    
     model = lm(@formula(y ~ x), DataFrame(x=time_array , y=log.(mean_heterozygosis_array)))
 
-    fit_params = coef(model)
-    slope, intercept = fit_params[2], fit_params[1]
-
-    # Obtain the errors 
-    errors = stderror(model)
-    slope_error, intercept_error = errors[2], errors[1]
+    model_params = coef(model)
+    slope, intercept = model_params[2], model_params[1]
 
     r_squared=r2(model)
 
@@ -511,20 +506,17 @@ function heterozygosis_evolution(N, #population
     label="", xlabel="Generations", ylabel=L"\ln(H_t)", grid=false)
     plot!(time_array, y_teor,linewidth=2, label="Linear fit")
     
+    
     savefig("Evolution_of_heterozygosis_$p_A.png")
 
     println("")
-    println("slope= ", slope," ± ", slope_error)
-    println("")
-    println("r_squared= ", r_squared)
-    println("")
-    print("Sigmas:")
-    println((-slope-1/(2*N))/slope_error)
+    println("slope= ", slope," also ", r_squared)
+    
 
 end
 
-heterozygosis_evolution(100, 0.5,100,100) 
-heterozygosis_evolution(100, 0.1,100,100)
+heterozygosis_evolution(100, 0.5,500,10^3) 
+heterozygosis_evolution(100, 0.1,500,10^3)
 
 function variance(N, #population 
     p_A, #frequency for the allele A
