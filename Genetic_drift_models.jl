@@ -1,5 +1,22 @@
 using Plots, Random, LaTeXStrings, Statistics, Distributions, GLM, DataFrames, DelimitedFiles, DataStructures, LsqFit, StatsBase
 
+
+function calculate_ci(data, confidence_level)
+    n = length(data)
+    mean_value = mean(data)
+    std_error = std(data) / sqrt(n)
+
+    z_value = quantile(Normal(), 1 - (1 - confidence_level) / 2)
+
+    lower_bound = mean_value - z_value * std_error
+    upper_bound = mean_value + z_value * std_error
+
+    return lower_bound, upper_bound
+end
+
+
+#####################################################################################################
+
 function creation_of_the_alleles_of_the_population(population_matrix,p_A, N)
 
     for i in 1:Int(p_A*N)
@@ -55,7 +72,7 @@ function distributions_of_the_unfixed_allele_frequency(N, #population
     
 
 
-    plot(linewidth=2)
+    plot(linewidth=3, xlabel="allele frequency", ylabel="probability density")
 
     for t_multiplier in t_array
 
@@ -65,7 +82,7 @@ function distributions_of_the_unfixed_allele_frequency(N, #population
 
         percentage_counter=0
 
-        for n in 1:n_tries
+        for _ in 1:n_tries
             
             creation_of_the_alleles_of_the_population(population_matrix,p_A, N)
 
@@ -86,8 +103,8 @@ function distributions_of_the_unfixed_allele_frequency(N, #population
             end
 
 
-            if counter_A!=0.0 && counter_A!=1.0 # not fixed populations
-                percentage_counter+=1
+            if counter_A!=0.0 && counter_A!=1.0                 # not fixed populations
+                percentage_counter+=2                           # allele frequency, not individual frequency
                 push!(heterallelic_density_array, counter_A)
             end
 
@@ -95,7 +112,7 @@ function distributions_of_the_unfixed_allele_frequency(N, #population
 
         end
 
-        percentage_counter=percentage_counter/n_tries
+        percentage_counter=percentage_counter*100/n_tries
         
         count_dict = Dict()
 
@@ -112,12 +129,12 @@ function distributions_of_the_unfixed_allele_frequency(N, #population
         end
 
         allele_frequency_array = collect(keys(ordered_dict))
-        number_of_population_array = collect(values(ordered_dict))
+        number_of_population_array = collect(values(ordered_dict)) .*percentage_counter ./ sum(values(ordered_dict))
 
 
 
         #histogram(heterallelic_density_array, title="t=$t_multiplier N", normalized=false, grid=false, label="", xlabel="allele frequency")
-        plot!(allele_frequency_array, number_of_population_array, grid=false, label="t=$t_multiplier N", xlabel="allele frequency")
+        plot!(allele_frequency_array, number_of_population_array, grid=false, label="t=$t_multiplier N")
         xlims!(0,1)
 
         savefig("Prob_distribution_N=$N-p=$p_A.png")
@@ -224,6 +241,8 @@ function moments_trajectories(N, p_A, t, n_tries)
 
     time_array=[i for i in 1:1:t]
 
+    T_fixed=-4*N*(p_A*log(p_A)+(1-p_A)*log(1-p_A))
+
     first_momenT_matrix_fixed=zeros(t,0)
     second_momenT_matrix_fixed=zeros(t,0)
 
@@ -266,15 +285,18 @@ function moments_trajectories(N, p_A, t, n_tries)
     end
 
 
-    plot(time_array, first_moment_array, xlabel="generations", label=L"\left\langle x\left(t\right)\right\rangle", grid=false)
+    plot(time_array, first_moment_array, xlabel="generations", label=L"\left\langle x\left(t\right)\right\rangle", grid=false, title="x=$p_A")
     plot!(time_array, second_moment_array, label=L"\left\langle x^2\left(t\right)\right\rangle")
     plot!(time_array, variance_array, label=L"\sigma_{x}^{2}(t)")
-    savefig("moments_fig_$N-$t-$n_tries.png")
+    vline!([T_fixed], label=L"\bar{t}", color=:black)
+    ylims!(-0.1, 1.1)
+    savefig("2-moments_fig_$N-$t-$n_tries-$p_A.png")
     
 end
 
-#moments_trajectories(500, 0.5, 500, 100)
-#moments_trajectories(50, 0.5, 500, 100)
+#moments_trajectories(500, 0.7, 5000, 10^4)
+#moments_trajectories(500, 0.3, 5000, 10^4)
+#moments_trajectories(500, 0.5, 5000, 10^4)
 
 
 
@@ -309,6 +331,8 @@ function t_fixed_and_t_lost(N_array, #population
             t_lost_array=[]
             t_rel_fixed=[]
             t_rel_lost=[]
+            conf_fix_array=[]
+            conf_lost_array=[]
 
             for p in p_A
 
@@ -362,11 +386,15 @@ function t_fixed_and_t_lost(N_array, #population
                 mean_lost=mean(t_lost_mean_array)
                 rel_err_fix=abs(mean_fixed-T_fixed)*100/T_fixed
                 rel_err_lost=abs(mean_lost-T_lost)*100/T_lost
+                confidence_fix=calculate_ci(t_fixed_mean_array, 0.95)
+                confidence_lost=calculate_ci(t_lost_mean_array, 0.95)
 
                 push!(t_array, mean_fixed)
                 push!(t_lost_array, mean_lost)
                 push!(t_rel_fixed, rel_err_fix)
                 push!(t_rel_lost, rel_err_lost)
+                push!(conf_fix_array, confidence_fix)
+                push!(conf_lost_array, confidence_lost)
 
                 
 
@@ -383,10 +411,14 @@ function t_fixed_and_t_lost(N_array, #population
             T_matrix_fixed=hcat(T_matrix_fixed, t_teor_fixed)
             T_matrix_fixed=hcat(T_matrix_fixed, t_array)
             T_matrix_fixed=hcat(T_matrix_fixed, t_rel_fixed)
+            T_matrix_fixed=hcat(T_matrix_fixed, conf_fix_array)
+
 
             T_matrix_lost=hcat(T_matrix_lost, t_teor_lost)
             T_matrix_lost=hcat(T_matrix_lost, t_lost_array)
-            T_matrix_lost=hcat(T_matrix_lost,t_rel_lost)
+            T_matrix_lost=hcat(T_matrix_lost, t_rel_lost)
+            T_matrix_lost=hcat(T_matrix_lost, conf_lost_array)
+
 
         end
 
@@ -405,7 +437,7 @@ end
 p_A_array=[i for i in 0.1:0.1:0.9]
 N_array=[50, 100]
 
-t_fixed_and_t_lost(N_array, p_A_array, 2000, 1000)
+#t_fixed_and_t_lost(N_array, p_A_array, 2000, 1000)
 
 
 function heterozygosis_evolution(N, #population 
@@ -491,8 +523,8 @@ function heterozygosis_evolution(N, #population
 
 end
 
-#heterozygosis_evolution(100, 0.5,100,100)
-#heterozygosis_evolution(100, 0.1,100,100)
+heterozygosis_evolution(100, 0.5,100,100) 
+heterozygosis_evolution(100, 0.1,100,100)
 
 function variance(N, #population 
     p_A, #frequency for the allele A
@@ -570,20 +602,29 @@ function variance(N, #population
 
     model(x, p) = x .* (1 .- x) / (2 .*p[1])
 
-    # Provide initial parameter guess
-    initial_guess = [1.0]  # Replace with an appropriate initial guess
+    initial_guess = [1.0] 
 
-    # Perform the regression
     fit = curve_fit(model, frequencies_array, variance_array, initial_guess)
 
     # Get the fitted parameters
     params = coef(fit)
+    param_errors = fit.stderror
+
+
+    freq_sorted=sort(frequencies_array, rev=true)
+    var_teor= freq_sorted .* (1 .-freq_sorted)/(2 *params[1])
 
     println("Fitted N: ", params[1])
     println("Relative error: ", abs(params[1]-N)*100/N)
+    println("standard deviation", param_errors)
+    scatter(frequencies_array, variance_array, xlabel="x", ylabel=L"Var(x_{t+1}|x_t=x)", grid=false, label="")
+    plot!(freq_sorted, var_teor, linewidth=3, label=L"Var_{teor}")
+    savefig("Var_frequencies_$N.png")
+
 end
 
-#variance(1000, 0.5, 5000,6)
+#variance(1000, 0.5, 5000,1000)
+#variance(100, 0.5, 500,1000)
 
 population_array=[20, 40, 60, 80, 100, 200, 500]
 
